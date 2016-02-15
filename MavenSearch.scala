@@ -82,7 +82,7 @@ object MavenSearch {
 	val res = packages.get.asInstanceOf[Map[String, Any]]("response").asInstanceOf[Map[String, List[Map[String, Any]]]]("docs")
 	//println(res)
 	val res1 = res.map(x => ClassnameResult(
-		x("id").asInstanceOf[String], 
+		x("g").asInstanceOf[String], 
 		x("a").asInstanceOf[String], 
 		x("latestVersion").asInstanceOf[String], 
 		x("timestamp").asInstanceOf[Double], 
