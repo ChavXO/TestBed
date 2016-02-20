@@ -1,92 +1,215 @@
-import java.net._ // class URL for REST requests, see https://docs.oracle.com/javase/7/docs/api/java/net/URL.html
-import java.time._ // for time parsing, see https://docs.oracle.com/javase/8/docs/api/java/time/package-summary.html
-import scala.util.parsing.json._ // for json parsing, see http://manuel.bernhardt.io/2015/11/06/a-quick-tour-of-json-libraries-in-scala/
-import java.net.HttpURLConnection
-import java.util.Scanner
-import scala.util.matching.Regex
+// TODO: use scopt as an Option parser
 
+import collection.breakOut
+import java.net._ 
+import java.text.SimpleDateFormat
+import java.time._ 
+import java.util.Date
+import java.util.Scanner
+import scala.collection.immutable
+import scala.util.matching.Regex
+import scala.util.parsing.json._ 
 
 object MavenSearch {
-  case class CoordinateResult(
-    groupId: String,
-    artifactId: String,
-    version: String,
-    timestamp: LocalDateTime
-  )
+	// type synonyms to make the code more readable
+	type GroupID      = String
+	type ArtifactID   = String
+	type Version      = String
+	type Timestamp    = LocalDateTime
+	type VersionCount = Double
+    type PackageMap   = Map[String, Any]
 
-  case class ClassnameResult(
-    groupId: String,
-    artifactId: String,
-    latestVersion: String,
-    timestamp: Double,
-    versionCount: Double
-  )
+	case class CoordinateResult(
+		groupId: GroupID,
+		artifactId: ArtifactID,
+		version: Version,
+		timestamp: Timestamp
+	)
+
+	case class ClassnameResult(
+		groupId: GroupID,
+		artifactId: ArtifactID,
+		latestVersion: Version,
+		timestamp: LocalDateTime,
+		versionCount: Double
+	)
+
+    // toString?
+    trait CoordinateString {
+        override def toString() : String = {
+            return  ""
+        }
+    }
+
+	case class Coordinate(
+		groupId: GroupID,
+		artifactId: ArtifactID,
+		version: Version,
+		packaging: String,
+		classifier: Version
+	)
+
+	trait QueryType
+	case class BasicQuery (packageName: String) extends QueryType
+	case class CoordinateQuery(coordinates: Coordinate) extends QueryType
+	case class ClassQuery(className: String) extends QueryType
+	case class FullQuery(fullName: String) extends QueryType
 
 
-  def byCoordinate(): Vector[CoordinateResult] = {
+	val baseUrl = "http://search.maven.org/solrsearch/select?"
+	val charset = java.nio.charset.StandardCharsets.UTF_8.name()
+
+	def intercalate(words : List[String], delimiter : String) : String = {
+	  return words match {
+	  	case Nil     => ""
+	  	case List(x) => x
+	  	case x :: xs => x + " " + delimiter + " " + intercalate(xs, delimiter)
+	  }
+	}
+
+    def showCoordinate (c : Coordinate) : String = {
+        return String.format(String.format("g:\"%s\" a:\"%s\" v:\"%s\"", c.groupId, c.artifactId, c.version))
+    }
+
+	def constructURL (searchTerm : QueryType) : String = {
+		val queryString = searchTerm match {
+			case BasicQuery(b)       => b
+            case CoordinateQuery(c)  => intercalate(showCoordinate(c).split(" ").toList, "AND")
+            case ClassQuery(c)       => String.format("c:\"%s\"", c)
+            case FullQuery(c)        => String.format("fc:\"%s\"", c)
+		}
+
+		// defaults
+    	val rows = "20"
+    	val wt = "json"
+
+    	val complete = String.format(baseUrl + "q=%s&rows=%s&wt=%s", 
+    	   URLEncoder.encode(queryString, charset), 
+    	   URLEncoder.encode(rows, charset),
+    	   URLEncoder.encode(wt, charset))
+        println(complete)
+    	complete
+	}
+
+    def timestampToDate(time: Double) : Timestamp = {
+        val timeLong = (time).toLong
+        val timeDate = new Date(timeLong)
+        val timeDateStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(timeDate)
+        LocalDateTime.parse(timeDateStr.replace(' ', 'T'))
+    } 
+
+    def parseClassResult(packageMap : PackageMap) : ClassnameResult = {
+        ClassnameResult (
+            packageMap("g").asInstanceOf[String], 
+            packageMap("a").asInstanceOf[String], 
+            packageMap("latestVersion").asInstanceOf[String], 
+            timestampToDate(packageMap("timestamp").asInstanceOf[Double]), 
+            packageMap("versionCount").asInstanceOf[Double]
+        )  
+    }
+
+    def parseCoordinateResult(packageMap : PackageMap) : CoordinateResult = {
+        CoordinateResult (
+            packageMap("g").asInstanceOf[String], 
+            packageMap("a").asInstanceOf[String], 
+            packageMap("v").asInstanceOf[String], 
+            timestampToDate(packageMap("timestamp").asInstanceOf[Double])
+        )  
+    }
+
+	def basicSearch(query: QueryType) : Vector[ClassnameResult] = {
+        val url = constructURL(query)
+        val packageMaps = downloadPackageInfo(url)
+        packageMaps.map(pkg => parseClassResult(pkg)).to[Vector]
+	}
+
+	def downloadPackageInfo(searchUrl : String) : List[PackageMap] = {
+        val myURL = new URL(searchUrl)
+        val myURLConnection = myURL.openConnection()
+        myURLConnection.connect()
+        val stream = myURLConnection.getInputStream()
+
+        // read input stream as string
+        val s = new java.util.Scanner(stream).useDelimiter("\\A");
+        val res = s.next()
+
+        val packages = JSON.parseFull(res)
+    
+        packages.get.asInstanceOf[PackageMap]("response").asInstanceOf[Map[String, List[PackageMap]]]("docs")
+
+	}
+
     /*
     example requests
     http://search.maven.org/solrsearch/select?q=g:"joda-time"&rows=100&wt=json&core=gav
     http://search.maven.org/solrsearch/select?q=fc:"org.joda.time.DateTime"&rows=100&wt=json
     */
-    ???
-  }
+	def byCoordinate(query : QueryType): Vector[CoordinateResult] = {
+    	val url = constructURL(query)
+        val packageMaps = downloadPackageInfo(url)
+        packageMaps.map(pkg => parseCoordinateResult(pkg)).to[Vector]
+	}
 
-  def byClassname(): Vector[ClassnameResult] = {
+    def byFullClassname(query : QueryType): Vector[CoordinateResult] = {
+        byCoordinate(query)
+    }
+
     /*
     example requests
     http://search.maven.org/solrsearch/select?q=g:"joda-time"&rows=100&wt=json
     */
-    ???
-  }
+	def byClassname(query : QueryType): Vector[ClassnameResult] = {
+    	val url = constructURL(query)
+        val packageMaps = downloadPackageInfo(url)
+        packageMaps.map(pkg => parseClassResult(pkg)).to[Vector]
+	}
 
-  // only works for fc package format
-  def searchMaven(packageName : String) :String = {
-  	val charset = java.nio.charset.StandardCharsets.UTF_8.name()
-  	val coordPattern = """([\w\.]+)""".r
-  	val isCoord = packageName match {
-  			case coordPattern(_*) => true
-  			case _                => false
-		}
-  	def constructURL () : String = {
-  		// TODO: url construction
-	    val url = "http://search.maven.org/solrsearch/select" //q=fc:”org.specs.runner.JUnit”&rows=20&wt=json"
-		val queryString = packageName
-		val rows = "20"
-		val wt = "json"
-		val query = String.format("q=%s&rows=%s&wt=%s", 
-		 URLEncoder.encode(queryString, charset), 
-		 URLEncoder.encode(rows, charset),
-		 URLEncoder.encode(wt, charset))
-		url + "?" + query
-  	}
-    
-  	val searchUrl = constructURL()
+    def parseQuery(queryList : Array[String]) : QueryType = {
+        def getOption(option : String) : String = {
+            val index = queryList.indexOf(option)
+            if (index != (-1)) 
+                return queryList(index + 1) 
+            return ""
+        }
+        val fc = getOption("-fc")
+        val g  = getOption("-g")
+        val a  = getOption("-a")
+        val id = getOption("-id")
+        val v  = getOption("-v")
+        val p  = getOption("-p")
+        val l  = getOption("-l")
+        val c  = getOption("-c")
 
-	val myURL = new URL(searchUrl)
-	// println(url + "?" + query)
-	val myURLConnection = myURL.openConnection()
-	myURLConnection.connect()
-	val stream = myURLConnection.getInputStream()
+        if (fc != "") {
+            return FullQuery(fc)
+        } else if (g != "" || id != "" || a != "") {
+            return CoordinateQuery( Coordinate (g, a, v, p, c))
+        } else if (c != "") {
+            return ClassQuery(c)
+        } else {
+            return BasicQuery(queryList(0))
+        }
 
-	// read input stream as string
-	val s = new java.util.Scanner(stream).useDelimiter("\\A");
-	val res = s.next()
-	res
-  }
 
-  def main(args : Array[String]) : Unit = {
+    }
 
-  	val packages = JSON.parseFull(searchMaven(args(0)))
-  	
-	val res = packages.get.asInstanceOf[Map[String, Any]]("response").asInstanceOf[Map[String, List[Map[String, Any]]]]("docs")
-	//println(res)
-	val res1 = res.map(x => ClassnameResult(
-		x("g").asInstanceOf[String], 
-		x("a").asInstanceOf[String], 
-		x("latestVersion").asInstanceOf[String], 
-		x("timestamp").asInstanceOf[Double], 
-		x("versionCount").asInstanceOf[Double]))
-  	res1.map(x => println(x))
-  }
-}
+	def main(args : Array[String]) : Unit = {
+    	if (args.length == 0 || args(0) == "--help") {
+    		println("Maven Search tool 0.0.1\n\tUsage: scala MavenSearch [package name]")
+            println("\tscala MavenSearch [option] [argument]")
+            println("Options:")
+            println("\t-g \tsearch for a group\n\t-fc \tsearch for a classname\n")    
+    		return
+    	}
+
+        val searchQuery = parseQuery(args)
+
+        val result =  searchQuery match {
+            case BasicQuery(b)       => basicSearch(searchQuery)
+            case CoordinateQuery(c)  => byCoordinate(searchQuery)
+            case ClassQuery(c)       => byClassname(searchQuery)
+            case FullQuery(c)        => byFullClassname(searchQuery)
+        }
+        result.map (x => println(x))
+	}
+}		
