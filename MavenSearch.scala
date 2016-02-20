@@ -1,6 +1,5 @@
 // TODO: use scopt as an Option parser
 
-import collection.breakOut
 import java.net._ 
 import java.text.SimpleDateFormat
 import java.time._ 
@@ -49,6 +48,7 @@ object MavenSearch {
 		classifier: Version
 	)
 
+
 	trait QueryType
 	case class BasicQuery (packageName: String) extends QueryType
 	case class CoordinateQuery(coordinates: Coordinate) extends QueryType
@@ -67,8 +67,21 @@ object MavenSearch {
 	  }
 	}
 
+    // hack for toString
     def showCoordinate (c : Coordinate) : String = {
-        return String.format(String.format("g:\"%s\" a:\"%s\" v:\"%s\"", c.groupId, c.artifactId, c.version))
+        val group = if (c.groupId != "") {
+            String.format("g:\"%s\" ", c.groupId)
+        } else ""
+
+        val artifact = if (c.artifactId != "") {
+            String.format("a:\"%s\" ", c.artifactId)
+        } else ""
+
+        val version = if (c.version != "") {
+            String.format("v:\"%s\" ", c.version)
+        } else ""
+
+        return String.format("%s%s%s", group, artifact, version)
     }
 
 	def constructURL (searchTerm : QueryType) : String = {
@@ -182,10 +195,10 @@ object MavenSearch {
 
         if (fc != "") {
             return FullQuery(fc)
-        } else if (g != "" || id != "" || a != "") {
-            return CoordinateQuery( Coordinate (g, a, v, p, c))
         } else if (c != "") {
             return ClassQuery(c)
+        } else if (g != "" || id != "" || a != "") {
+            return CoordinateQuery( Coordinate (g, a, v, p, c))
         } else {
             return BasicQuery(queryList(0))
         }
