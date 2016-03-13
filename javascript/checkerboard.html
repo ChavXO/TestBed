@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>Checkerboard</title>
+    <script type="text/javascript" src="../lib/webgl-utils.js"></script>
+	<script type="text/javascript" src="../lib/MV.js"></script>
+	<script type="text/javascript" src="../lib/InitShaders.js"></script>
+
+    <script type="text/javascript" src="quad.js"></script>
+	
+	
+	
+	<script id="vertex-shader" type="x-shader/x-vertex">
+	    
+	
+	    attribute vec4 a_Position;
+	    varying vec4 v_Location;
+	    void main(){
+		    gl_Position = a_Position;
+		    v_Location = gl_Position;
+	    }
+	</script>
+		
+	<script id="fragment-shader" type="x-shader/x-fragment">
+	    precision mediump float;
+	    varying vec4 v_Location;
+	    highp float x, y;
+	    int iteration = 0;
+
+	    void main(){
+						x = v_Location.x;
+						y = v_Location.y;
+						
+						
+						if (ceil(mod(x*5.0, 2.0)) == ceil(mod(y*5.0, 2.0))){
+								gl_FragColor = vec4(0.0,0.0,0.0,1.0);  //light color (RGB)
+						}else{
+								gl_FragColor = vec4(1.0,1.0,1.0,1.0);  //black color
+						}
+							
+	    }
+	</script>
+		
+	
+	
+</head>
+
+<body >
+		<canvas id="gl-canvas" width="640" height="640" style="border:solid 1px black">
+			You need a better web browser
+		</canvas>
+		
+		<h1>Checkerboard</h1>
+		<p>This application draws a checkerboard within the fragment shader. The JavaScript sends a simple quad that fills the view. The vertex shader passes the location of the vertices as a varyng variable to the fragment shader, which has the effect of providing a location for every fragment. We then do some simple math to break up the space into a 10x10 grid. Since the width is 2, we multiply x by 5 to give us a width of 10. Modding this by 2 means that we can determine if the number is even or odd. We take the ceiling to throw out the fractional part, and we have ten stripes of alternating colour. The same trick works for y. We can then get alternating blocks by looking at when the two values agree (or don't agree).</p>
+		</body>
+</html>
